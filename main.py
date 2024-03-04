@@ -3,7 +3,7 @@ from openai import OpenAI
 from termcolor import colored
 import json
 
-from tools import GOOGLE_SEARCH_TOOL, google_search
+from tools import *
 
 client = OpenAI()
 
@@ -98,7 +98,11 @@ def run_conversation(
 
 
 run_conversation(
-    "Please tell me what is the current ongoing issue in the war between Russia and Ukraine",
-    [GOOGLE_SEARCH_TOOL],
-    {"google_search": google_search},
+    "Give me a report of timeline of events in Russia-Ukraine up to date. Don't just give me link. Research the topic, use the available tools whenever necessary, and make a report to me.",
+    [GOOGLE_SEARCH_TOOL, PARSE_TEXTS_TOOL, PARSE_ANCHORS_TOOL],
+    {
+        "google_search": google_search,
+        "parse_texts_from_webpage": parse_texts_from_webpage,
+        "parse_anchors_from_webpage": parse_anchors_from_webpage,
+    },
 )

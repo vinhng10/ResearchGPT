@@ -12,7 +12,6 @@ SEARCH_ENGINE_ID = os.getenv("GOOGLE_SEARCH_ENGINE_ID")
 # Define the base URL for the Custom Search JSON API
 BASE_URL = "https://www.googleapis.com/customsearch/v1"
 
-# Google search
 GOOGLE_SEARCH_TOOL = {
     "type": "function",
     "function": {
@@ -23,7 +22,7 @@ GOOGLE_SEARCH_TOOL = {
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "The search query to be used.",
+                    "description": "The search query to be used",
                 },
                 "num_results": {
                     "type": "integer",
@@ -35,6 +34,40 @@ GOOGLE_SEARCH_TOOL = {
         },
     },
 }
+PARSE_TEXTS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "parse_texts_from_webpage",
+        "description": "Extracts and returns all text content from a webpage",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL of the webpage",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+}
+PARSE_ANCHORS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "parse_anchors_from_webpage",
+        "description": "Extracts anchor text and href links from a webpage",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL of the webpage",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+}
 
 
 # Retry decorator settings
@@ -42,6 +75,102 @@ retry_settings = {
     "wait": wait_exponential(multiplier=1, min=4, max=10),
     "stop": stop_after_attempt(3),
 }
+
+
+@retry(**retry_settings)
+def parse_texts_from_webpage(url: str) -> str:
+    """
+    Extracts and returns all text content from a webpage.
+
+    Args:
+        url (str): The URL of the webpage to extract text from.
+
+    Returns:
+        str: Concatenated text content of the webpage.
+    """
+    try:
+        # Send an HTTP GET request to the URL
+        response = requests.get(url)
+
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            # Parse the HTML content of the page
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Extract the text content of the webpage
+            texts = " ".join(soup.get_text().split())
+
+            return texts
+
+        else:
+            print(f"Failed to retrieve content. Status code: {response.status_code}")
+            return ""
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return ""
+
+
+@retry(**retry_settings)
+def parse_anchors_from_webpage(url: str) -> Dict[str, str]:
+    """
+    Extracts anchor text and href links from a webpage.
+
+    Args:
+        url (str): The URL of the webpage to extract anchor links from.
+
+    Returns:
+        Dict[str, str]: A dictionary containing anchor text as keys and href links as values.
+            If the href URL is within the same site, only the path without the scheme and hostname is kept.
+            The return dictionary also contains a key "_host" with the hostname of the input URL as its value.
+            If the href points to a different site, it is kept intact.
+
+    Example:
+        >>> extract_anchor_links('https://example.com')
+        {
+            'Link 1': '/page1',
+            'Link 2': '/page2',
+            'Link 3': 'https://external-site.com/page3',
+            '_host': 'https://example.com'
+        }
+    """
+    try:
+        # Send an HTTP GET request to the URL
+        response = requests.get(url)
+
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            # Parse the HTML content of the page
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Extract anchor tags with links separately
+            anchor_tags = soup.find_all("a")
+            parsed_url = urlparse(url)
+            anchors = {"_host": f"{parsed_url.scheme}://{parsed_url.hostname}"}
+
+            for tag in anchor_tags:
+                key = tag.text.strip()
+                href = tag.get("href")
+                parsed_href = urlparse(href)
+
+                if key and href and not parsed_href.fragment:
+                    hostname = parsed_href.hostname
+                    if hostname:
+                        if hostname == parsed_url.hostname:
+                            anchors[key] = parsed_href.path
+                        else:
+                            anchors[key] = href
+                    else:
+                        anchors[key] = href
+
+            return anchors
+        else:
+            print(f"Failed to retrieve content. Status code: {response.status_code}")
+            return {}
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return {}
 
 
 def parse_search_item(search_item: Dict[str, Any]) -> Dict[str, str]:
