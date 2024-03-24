@@ -1,13 +1,8 @@
-import logging
-from typing import Any
 from directory_tree import display_tree
 from pathlib import Path
 from tenacity import retry
 from utils import retry_settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 WRITE_TO_FILE_SCHEMA = {
     "type": "function",
@@ -63,10 +58,7 @@ def write_to_file(path: str, content: str) -> str:
         content (str): The content to be written to the file.
 
     Returns:
-        None
-
-    Raises:
-        IOError: If there is an error writing to the file.
+        str
     """
     try:
         # Create parent directories if they don't exist
@@ -77,15 +69,14 @@ def write_to_file(path: str, content: str) -> str:
             # Write the content to the file
             file.write(content)
 
-        logger.info(f"Content written to {path}")
-        return
+        return f"Content written to {path}"
 
     except IOError as e:
-        logger.error(f"Error writing to file: {e}")
+        return f"Error writing to file: {e}"
 
 
 @retry(**retry_settings)
-def get_directory_tree(directory: str) -> str | Any | None:
+def get_directory_tree(directory: str) -> str:
     """
     Generate a directory tree structure for the specified directory path.
 
@@ -93,7 +84,7 @@ def get_directory_tree(directory: str) -> str | Any | None:
         directory (str): The path to the directory.
 
     Returns:
-        str | Any | None
+        str
     """
     import sys
     from io import StringIO
