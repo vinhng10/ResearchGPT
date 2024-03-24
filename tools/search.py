@@ -2,7 +2,8 @@ import os
 from typing import Any, Dict, List, Tuple
 import requests
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry
+from tools.utils import retry_settings
 
 # Load environment variables from .env file
 load_dotenv()
@@ -34,13 +35,6 @@ GOOGLE_SEARCH_TOOL = {
             "required": ["query"],
         },
     },
-}
-
-
-# Retry decorator settings
-retry_settings = {
-    "wait": wait_exponential(multiplier=1, min=4, max=10),
-    "stop": stop_after_attempt(3),
 }
 
 

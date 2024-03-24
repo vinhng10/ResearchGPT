@@ -1,4 +1,6 @@
 beautifulsoup4
+boto3
+llama-index
 openai
 python-dotenv
 requests
