@@ -1,5 +1,6 @@
 beautifulsoup4
 boto3
+directory-tree
 llama-index
 openai
 python-dotenv
