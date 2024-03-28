@@ -1,7 +1,7 @@
 from directory_tree import display_tree
 from pathlib import Path
 from tenacity import retry
-from utils import retry_settings
+from .utils import retry_settings
 
 
 WRITE_TO_FILE_SCHEMA = {

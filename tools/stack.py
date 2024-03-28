@@ -1,6 +1,6 @@
 from typing import List
 from tenacity import retry
-from utils import retry_settings
+from .utils import retry_settings
 
 
 PUSH_TASK_SCHEMA = {
