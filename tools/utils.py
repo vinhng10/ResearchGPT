@@ -1,4 +1,5 @@
-from typing import Dict
+import json
+from typing import Any, Callable
 
 from tenacity import stop_after_attempt, wait_exponential
 from termcolor import colored
@@ -11,37 +12,13 @@ retry_settings = {
 }
 
 
-def pretty_print(message: Dict[str, str]) -> None:
-    role_to_color = {
-        "system": "red",
-        "user": "green",
-        "assistant": "blue",
-        "tool": "magenta",
-    }
-
-    if message["role"] == "system":
-        print(
-            colored(f"SYSTEM: {message['content']}\n", role_to_color[message["role"]])
-        )
-    elif message["role"] == "user":
-        print(colored(f"USER: {message['content']}\n", role_to_color[message["role"]]))
-    elif message["role"] == "assistant" and message.get("tool_calls"):
-        print(
-            colored(
-                f"ASSISTANT: {message['tool_calls']}\n",
-                role_to_color[message["role"]],
-            )
-        )
-    elif message["role"] == "assistant" and not message.get("tool_calls"):
-        print(
-            colored(
-                f"ASSISTANT: {message['content']}\n", role_to_color[message["role"]]
-            )
-        )
-    elif message["role"] == "tool":
-        print(
-            colored(
-                f"TOOL: ({message['name']}): {message['content']}\n",
-                role_to_color[message["role"]],
-            )
-        )
+# Pretty print decorator
+def pretty_print(color: str) -> Callable[..., Any]:
+    def decorator(func):
+        def wrapper(*args, **kwargs) -> Any:
+            output = func(*args, **kwargs)
+            output = f"TOOL: {func.__name__}\nRESULT: {json.dumps(output)}\n"
+            print(colored(output, color))
+            return output
+        return wrapper
+    return decorator

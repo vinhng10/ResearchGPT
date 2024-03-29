@@ -1,6 +1,6 @@
 from typing import List
 from tenacity import retry
-from .utils import retry_settings
+from .utils import pretty_print, retry_settings
 
 
 PUSH_TASK_SCHEMA = {
@@ -31,6 +31,7 @@ POP_TASK_SCHEMA = {
 
 
 @retry(**retry_settings)
+@pretty_print(color="yellow")
 def push_task(task: str, stack: List[str]) -> None:
     """
     Push a task to a task stack.
@@ -42,10 +43,15 @@ def push_task(task: str, stack: List[str]) -> None:
     Returns:
         None
     """
-    stack.append(task)
+    try:
+        stack.append(task)
+        return task
+    except Exception as e:
+        return e
 
 
 @retry(**retry_settings)
+@pretty_print(color="yellow")
 def pop_task(stack: List[str]) -> str:
     """
     Pop a task from a task stack.
@@ -56,4 +62,10 @@ def pop_task(stack: List[str]) -> str:
     Returns:
         str
     """
-    return stack.pop()
+    try:
+        if stack:
+            return stack.pop()
+        else:
+            return "Stack is empty."
+    except Exception as e:
+        return e

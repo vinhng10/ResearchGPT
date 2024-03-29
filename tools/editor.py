@@ -1,7 +1,28 @@
+from io import StringIO
+import sys
 from directory_tree import display_tree
 from pathlib import Path
 from tenacity import retry
-from .utils import retry_settings
+from .utils import pretty_print, retry_settings
+
+
+READ_FILE_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "read_file",
+        "description": "Read content of a file specified by the given path.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The path to the file.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+}
 
 
 WRITE_TO_FILE_SCHEMA = {
@@ -47,6 +68,29 @@ GET_DIRECTORY_TREE_SCHEMA = {
 
 
 @retry(**retry_settings)
+@pretty_print(color="green")
+def read_file(path: str) -> str:
+    """
+    Read content of a file specified by the given path.
+
+    Args:
+        path (str): The path to the file to be read.
+
+    Returns:
+        str
+    """
+    try:
+        # Open the file in read mode:
+        with open(path, "r") as file:
+            content = file.read()
+        return content
+
+    except IOError as e:
+        return e
+
+
+@retry(**retry_settings)
+@pretty_print(color="green")
 def write_to_file(path: str, content: str) -> str:
     """
     Write content to a file specified by the given path. If the file does not exist,
@@ -71,11 +115,12 @@ def write_to_file(path: str, content: str) -> str:
 
         return f"Content written to {path}"
 
-    except IOError as e:
-        return f"Error writing to file: {e}"
+    except Exception as e:
+        return e
 
 
 @retry(**retry_settings)
+@pretty_print(color="cyan")
 def get_directory_tree(directory: str) -> str:
     """
     Generate a directory tree structure for the specified directory path.
@@ -86,10 +131,10 @@ def get_directory_tree(directory: str) -> str:
     Returns:
         str
     """
-    import sys
-    from io import StringIO
-
-    sys.stdout = StringIO()
-    tree = display_tree(dir_path=directory, string_rep=True)
-    exception = sys.stdout.getvalue()
-    return tree if tree else exception
+    try:
+        sys.stdout = StringIO()
+        tree = display_tree(dir_path=directory, string_rep=True)
+        exception = sys.stdout.getvalue()
+        return tree if tree else exception
+    except Exception as e:
+        return e

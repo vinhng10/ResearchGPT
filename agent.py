@@ -35,15 +35,6 @@ class Agent:
             }
         ]
 
-    def pretty_print(func, color: str) -> Callable[..., Any]:
-        def wrapper(self, *args, **kwargs) -> Any:
-            output = func(self, *args, **kwargs)
-            print(colored(output, color))
-            return output
-
-        return wrapper
-
-    # @partial(pretty_print, color="cyan")
     def chat(self, message: str) -> ChatCompletionMessage:
         self.messages.append({"role": "user", "content": message})
         while True:
@@ -67,7 +58,6 @@ class Agent:
                 for tool_call in tool_calls:
                     self.use_tool(tool_call)
 
-    @partial(pretty_print, color="green")
     def use_tool(self, tool_call) -> str:
         tool_name = tool_call.function.name
         tool = self.tools[tool_name]
@@ -81,4 +71,3 @@ class Agent:
                 "content": json.dumps(response),
             }
         )
-        return f"TOOL: {tool_name}\nRESULT: {json.dumps(response)}\n"
