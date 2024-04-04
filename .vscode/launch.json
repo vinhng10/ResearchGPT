@@ -8,9 +8,10 @@
             "name": "Python Debugger: Current File",
             "type": "debugpy",
             "request": "launch",
-            "program": "${file}",
+            "program": "${cwd}/agent/main.py",
             "console": "integratedTerminal",
             "justMyCode": false,
+            "cwd": "${workspaceFolder}",
             "python": "${command:python.interpreterPath}",
             "args": []
         }

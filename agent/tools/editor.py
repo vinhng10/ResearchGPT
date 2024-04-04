@@ -1,9 +1,7 @@
-from io import StringIO
-import sys
-from directory_tree import display_tree
+import subprocess
 from pathlib import Path
 from tenacity import retry
-from .utils import pretty_print, retry_settings
+from .utils import build_tree, pretty_print, retry_settings
 
 
 READ_FILE_SCHEMA = {
@@ -23,7 +21,6 @@ READ_FILE_SCHEMA = {
         },
     },
 }
-
 
 WRITE_TO_FILE_SCHEMA = {
     "type": "function",
@@ -47,6 +44,23 @@ WRITE_TO_FILE_SCHEMA = {
     },
 }
 
+RUN_COMMAND_SCHEMA = {
+    "type": "function",
+    "function": {
+        "name": "run_command",
+        "description": "Run a shell command in the terminal.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command.",
+                },
+            },
+            "required": ["command"],
+        },
+    },
+}
 
 GET_DIRECTORY_TREE_SCHEMA = {
     "type": "function",
@@ -85,8 +99,8 @@ def read_file(path: str) -> str:
             content = file.read()
         return content
 
-    except IOError as e:
-        return e
+    except Exception as e:
+        return str(e)
 
 
 @retry(**retry_settings)
@@ -116,11 +130,10 @@ def write_to_file(path: str, content: str) -> str:
         return f"Content written to {path}"
 
     except Exception as e:
-        return e
+        return str(e)
 
 
 @retry(**retry_settings)
-@pretty_print(color="cyan")
 def get_directory_tree(directory: str) -> str:
     """
     Generate a directory tree structure for the specified directory path.
@@ -132,9 +145,31 @@ def get_directory_tree(directory: str) -> str:
         str
     """
     try:
-        sys.stdout = StringIO()
-        tree = display_tree(dir_path=directory, string_rep=True)
-        exception = sys.stdout.getvalue()
-        return tree if tree else exception
+        tree = build_tree(directory, ["__pycache__", "node_modules"])
+        return tree if tree else f'No such file or directory: "{directory}"'
     except Exception as e:
-        return e
+        return str(e)
+
+
+@retry(**retry_settings)
+@pretty_print(color="green")
+def run_command(command: str) -> str:
+    """
+    Run a shell command in the terminal.
+
+    Args:
+        command (str): The command.
+
+    Returns:
+        str
+    """
+    try:
+        if "npm start" in command:
+            return "Server started successfully."
+        result = subprocess.run(command, shell=True)
+        if result.returncode == 0:
+            return result.stdout.strip()
+        else:
+            return result.stderr.strip()
+    except Exception as e:
+        return str(e)
