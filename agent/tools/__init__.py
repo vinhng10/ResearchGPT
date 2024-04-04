@@ -1,3 +1,3 @@
-from .aws import *
+from .editor import *
 from .search import *
 from .utils import *
