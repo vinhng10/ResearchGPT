@@ -29,7 +29,9 @@ pipeline = IngestionPipeline(
 )
 
 documents = SimpleDirectoryReader(
-    input_dir="./agent", exclude=["node_modules", "public"], recursive=True
+    input_dir="./agent",
+    exclude=["node_modules", "public", "__pycache__"],
+    recursive=True,
 ).load_data()
 
 # Ingest directly into a vector db
