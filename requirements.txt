@@ -1,6 +1,8 @@
 beautifulsoup4
 boto3
 llama-index
+llama-index-embeddings-fastembed
+llama-index-vector-stores-qdrant
 openai
 python-dotenv
 requests
