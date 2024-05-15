@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag
+  labels:
+    app.kubernetes.io/name: rag
+    app.kubernetes.io/version: latest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rag
+      app.kubernetes.io/version: latest
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rag
+        app.kubernetes.io/version: latest
+    spec:
+      containers:
+        - name: rag
+          image: registry.dev.dbinno.com/development/backend/rag:latest
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: rag
+          volumeMounts:
+            - name: rag
+              mountPath: /storage
+      volumes:
+        - name: rag
+          persistentVolumeClaim:
+            claimName: rag
+      imagePullSecrets:
+        - name: registry-dbinno-com
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag
+  labels:
+    app.kubernetes.io/name: rag
+    app.kubernetes.io/version: latest
+spec:
+  selector:
+    app.kubernetes.io/name: rag
+    app.kubernetes.io/version: latest
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag
+data:
+  LLM_URL: "https://development-llm.dbinno.com/v1"
+  EMBED_MODEL: "BAAI/bge-large-en-v1.5"
+  VECTOR_STORE_URL: "https://development-qdrant.dbinno.com"
+  TEMPERATURE: 0.8
+  SIMILARITY_TOP_K: 1
+  CHUNK_SIZE: 512
+  CHUNK_OVERLAP: 64
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: rag
+spec:
+  capacity:
+    storage: 10Gi
+  local:
+    path: /mnt/rag
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Recycle
+  storageClassName: local-storage
+  volumeMode: Filesystem
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - dev-worker1
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rag
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Filesystem
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-storage

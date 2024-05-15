@@ -26,23 +26,26 @@ class Chat(BaseModel):
     content: str
 
 
-class Settings(BaseSettings):
+class Environment(BaseSettings):
+    llm_url: str = "https://development-llm.dbinno.com/v1"
     embed_model: str = "BAAI/bge-large-en-v1.5"
     vector_store_url: str = "https://development-qdrant.dbinno.com"
-    temperature: float = 0.8
+    temperature: float = 0.1
     similarity_top_k: int = 1
-    chunk_size: int = 512
+    chunk_size: int = 316
     chunk_overlap: int = 64
 
 
-settings = Settings()
+env = Environment()
 app = FastAPI()
 
 Settings.llm = OpenAI(
-    api_base="https://development-llm.dbinno.com/v1", temperature=0.1, max_tokens=2048
+    api_base=env.llm_url, temperature=env.temperature, max_tokens=1024
 )
-Settings.embed_model = FastEmbedEmbedding(model_name=settings.embed_model)
-client = qdrant_client.QdrantClient(url=settings.vector_store_url, port=443)
+Settings.embed_model = FastEmbedEmbedding(
+    model_name=env.embed_model, cache_dir="/storage"
+)
+client = qdrant_client.QdrantClient(url=env.vector_store_url, port=443)
 vector_store = QdrantVectorStore(client=client, collection_name="Store")
 index = VectorStoreIndex.from_vector_store(
     vector_store=vector_store, insert_batch_size=32
@@ -50,14 +53,9 @@ index = VectorStoreIndex.from_vector_store(
 # text qa prompt
 text_qa_system_prompt = ChatMessage(
     content=(
-        "<SYS> You are an expert Q&A system that is trusted around the world.\n"
-        "Always answer the query using the provided context information, "
-        "and not prior knowledge.\n"
-        "Some rules to follow:\n"
-        "1. Never directly reference the given context in your answer.\n"
-        "2. Avoid statements like 'Based on the context, ...' or "
-        "'The context information ...' or anything along "
-        "those lines. </SYS>"
+        "<<SYS>> You are an expert Q&A system that is trusted around the world.\n"
+        "You always answer the query using the provided context information "
+        "and never use your prior knowledge. <</SYS>>"
     ),
     role=MessageRole.SYSTEM,
 )
@@ -67,11 +65,12 @@ text_qa_prompt_tmpl_msgs = [
     ChatMessage(
         content=(
             "Context information is below.\n"
-            "-----\n"
+            "---------------\n"
             "{context_str}\n"
-            "-----\n"
-            "Given the context information and not prior knowledge, "
-            "answer the query.\n"
+            "---------------\n"
+            "Given the context information and not prior knowledge, answer the query.\n"
+            "Do not include statements like 'According to the provided text' or 'Based "
+            "on the provided information' or anything similar in your answer."
             "Query: {query_str}\n"
             "Answer: "
         ),
@@ -83,14 +82,12 @@ chat_text_qa_prompt = ChatPromptTemplate(message_templates=text_qa_prompt_tmpl_m
 
 query_engine = index.as_query_engine(
     streaming=True,
-    similarity_top_k=settings.similarity_top_k,
+    similarity_top_k=env.similarity_top_k,
     text_qa_template=chat_text_qa_prompt,
 )
 pipeline = IngestionPipeline(
     transformations=[
-        SentenceSplitter(
-            chunk_size=settings.chunk_size, chunk_overlap=settings.chunk_overlap
-        )
+        SentenceSplitter(chunk_size=env.chunk_size, chunk_overlap=env.chunk_overlap)
     ],
     vector_store=vector_store,
 )
@@ -159,14 +156,15 @@ async def ui():
         <div class="container">
         <div class="column file-upload-column">
             <div>
-            <h2>File Upload</h2>
+            <h2>Document Upload</h2>
+            <p>The uploaded documents will be stored in database and "learned" by AI.</p>
             <input type="file" id="fileInput" multiple />
             <button id="submitBtn" class="btn btn-primary mt-2">Submit</button>
             <ul id="fileList"></ul>
             </div>
-
+            <hr>
             <h2>Retrieved Information</h2>
-            <h6>(Hidden From Users)</h6>
+            <p>This is just for understanding what information the AI is able to retrieve from the database. In practice, these are not displayed for end user.</p>
             <div id="retrievedDocuments" class="messages"></div>
         </div>
         <div class="column">
@@ -179,7 +177,7 @@ async def ui():
                 type="text"
                 class="form-control"
                 id="messageInput"
-                placeholder="Type your message..."
+                placeholder="Ask AI anything about your documents..."
             />
             </div>
         </div>
@@ -190,7 +188,7 @@ async def ui():
         const messageInput = document.getElementById("messageInput");
 
         async function retrieve(message) {
-            const url = "http://localhost:8000/retrieve/";
+            const url = "/retrieve";
 
             const data = {
             content: message,
@@ -221,7 +219,7 @@ async def ui():
         }
 
         async function aiChat(message) {
-            const url = "http://localhost:8000/chat/";
+            const url = "/chat";
 
             const data = {
             content: message,
@@ -288,7 +286,7 @@ async def ui():
         submitBtn.addEventListener("click", async function () {
             submitBtn.disabled = true;
             submitBtn.textContent = "Uploading...";
-            
+
             const files = Array.from(fileInput.files);
 
             const formData = new FormData();
@@ -318,7 +316,7 @@ async def ui():
     """
 
 
-@app.post("/upload/")
+@app.post("/upload")
 async def upload_files(files: list[UploadFile]):
     filepaths = []
     for file in files:
@@ -332,14 +330,14 @@ async def upload_files(files: list[UploadFile]):
     return {"filenames": [file.filename for file in files]}
 
 
-@app.post("/retrieve/")
+@app.post("/retrieve")
 async def retrieve(chat: Chat) -> list[Document]:
     nodes = query_engine.retrieve(QueryBundle(query_str=chat.content))
     data = [Document(content=node.text) for node in nodes]
     return data
 
 
-@app.post("/chat/")
+@app.post("/chat")
 async def chat(chat: Chat):
 
     def stream():
