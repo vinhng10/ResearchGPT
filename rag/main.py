@@ -156,36 +156,69 @@ async def ui():
         <div class="container">
         <div class="column file-upload-column">
             <div>
-            <h2>Document Upload</h2>
-            <p>The uploaded documents will be stored in database and "learned" by AI.</p>
+            <h3>Document Upload</h3>
+            <p>
+                The uploaded documents will be stored in database and "learned" by
+                AI.
+            </p>
             <input type="file" id="fileInput" multiple />
             <button id="submitBtn" class="btn btn-primary mt-2">Submit</button>
             <ul id="fileList"></ul>
             </div>
-            <hr>
-            <h2>Retrieved Information</h2>
-            <p>This is just for understanding what information the AI is able to retrieve from the database. In practice, these are not displayed for end user.</p>
+            <hr />
+            <h3>Retrieved Information</h3>
+            <p>
+            This is just for understanding what information the AI is able to
+            retrieve from the database. In practice, these are not displayed for
+            end user.
+            </p>
             <div id="retrievedDocuments" class="messages"></div>
         </div>
-        <div class="column">
-            <h2>Conversation</h2>
-            <div class="messages" id="messages">
+        <div class="column file-upload-column">
+            <h3>Ask Question About Uploaded Documents</h3>
+            <div class="messages" id="ragMessages">
             <!-- Messages will be added dynamically here -->
             </div>
             <div class="input-container">
             <input
                 type="text"
                 class="form-control"
-                id="messageInput"
-                placeholder="Ask AI anything about your documents..."
+                id="ragInput"
+                placeholder="Ask AI anything about your documents ..."
+            />
+            </div>
+        </div>
+        <div class="column">
+            <h3>General Purpose AI Assistant</h3>
+            <p>
+            Suitable for general tasks that don't need information from uploaded
+            documents.
+            </p>
+            <div class="messages" id="aiMessages">
+            <!-- Messages will be added dynamically here -->
+            </div>
+            <div class="input-container">
+            <input
+                type="text"
+                class="form-control"
+                id="aiInput"
+                placeholder="Ask AI anything ..."
             />
             </div>
         </div>
         </div>
 
         <script>
-        const messagesContainer = document.getElementById("messages");
-        const messageInput = document.getElementById("messageInput");
+        const ragMessagesContainer = document.getElementById("ragMessages");
+        const aiMessagesContainer = document.getElementById("aiMessages");
+        const ragInput = document.getElementById("ragInput");
+        const aiInput = document.getElementById("aiInput");
+        const aiMessages = [
+            {
+            role: "system",
+            content: "<<SYS>> You are a helpful assistant. <</SYS>>",
+            },
+        ];
 
         async function retrieve(message) {
             const url = "/retrieve";
@@ -218,7 +251,7 @@ async def ui():
             }
         }
 
-        async function aiChat(message) {
+        async function ragChat(message) {
             const url = "/chat";
 
             const data = {
@@ -238,7 +271,7 @@ async def ui():
 
             const messageElement = document.createElement("div");
             messageElement.classList.add("message-container", "ai-message");
-            messagesContainer.appendChild(messageElement);
+            ragMessagesContainer.appendChild(messageElement);
 
             let chunks = "";
 
@@ -251,29 +284,105 @@ async def ui():
                 stream: true,
                 });
                 messageElement.textContent = chunks;
-                scrollToBottom();
+                scrollToBottom(ragMessagesContainer);
             } catch (error) {
                 continue;
             }
             }
         }
 
-        function scrollToBottom() {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        async function aiChat(input) {
+            const url = "https://development-llm.dbinno.com/v1/chat/completions";
+
+            aiMessages.push({
+            role: "user",
+            content: input,
+            });
+
+            const data = {
+            messages: aiMessages,
+            stream: true,
+            max_tokens: 1024,
+            temperature: 0.8,
+            };
+
+            const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(data),
+            });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            const messageElement = document.createElement("div");
+            messageElement.classList.add("message-container", "ai-message");
+            aiMessagesContainer.appendChild(messageElement);
+            let answer = "";
+
+            while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            try {
+                const chunks = decoder
+                .decode(value, {
+                    stream: true,
+                })
+                .trim()
+                .replace(/[\\r\\n]+/g, "\\r\\n")
+                .split("\\r\\n");
+
+                for (const chunk of chunks) {
+                const content = JSON.parse(chunk.substring(6)).choices[0].delta;
+                if (content.hasOwnProperty("content")) {
+                    answer += content.content;
+                    messageElement.textContent = answer;
+                    scrollToBottom(aiMessagesContainer);
+                }
+                }
+            } catch (error) {
+                console.error("===>", error);
+                continue;
+            }
+            }
+
+            aiMessages.push({
+            role: "assistant",
+            content: answer.slice(0, -4),
+            });
         }
 
-        messageInput.addEventListener("keypress", function (e) {
+        function scrollToBottom(container) {
+            container.scrollTop = container.scrollHeight;
+        }
+
+        ragInput.addEventListener("keypress", function (e) {
             if (e.key === "Enter") {
-            const message = messageInput.value.trim();
+            const message = ragInput.value.trim();
             if (message !== "") {
                 const messageElement = document.createElement("div");
                 messageElement.classList.add("message-container", "user-message");
                 messageElement.textContent = message;
-                messagesContainer.appendChild(messageElement);
-                scrollToBottom();
+                ragMessagesContainer.appendChild(messageElement);
+                scrollToBottom(ragMessagesContainer);
                 retrieve(message);
+                ragChat(message);
+                ragInput.value = "";
+            }
+            }
+        });
+
+        aiInput.addEventListener("keypress", function (e) {
+            if (e.key === "Enter") {
+            const message = aiInput.value.trim();
+            if (message !== "") {
+                const messageElement = document.createElement("div");
+                messageElement.classList.add("message-container", "user-message");
+                messageElement.textContent = message;
+                aiMessagesContainer.appendChild(messageElement);
+                scrollToBottom(aiMessagesContainer);
                 aiChat(message);
-                messageInput.value = "";
+                aiInput.value = "";
             }
             }
         });
