@@ -24,11 +24,18 @@ class Document(BaseModel):
     content: str
 
 
-class Chat(BaseModel):
+class Message(BaseModel):
+    role: str = "user"
     content: str
 
 
-class Message(BaseModel):
+class Messages(BaseModel):
+    messages: list[Message]
+    max_tokens: int = 1024
+    temperature: float = 0.8
+
+
+class Embeddings(BaseModel):
     author: str
     chat: str | None = None
     context: str | None = None
@@ -95,7 +102,7 @@ text_qa_prompt_tmpl_msgs = [
             "---------------\n"
             "Given the context information and not prior knowledge, answer the query.\n"
             "Do not include statements like 'According to the provided text' or 'Based "
-            "on the provided information' or anything similar in your answer."
+            "on the provided information' or anything similar in your answer.\n"
             "Query: {query_str}\n"
             "Answer: "
         ),
@@ -130,7 +137,7 @@ async def ui():
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Simple Chat Application with File Uploader</title>
+        <title>AI Assistant</title>
         <link
         rel="stylesheet"
         href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
@@ -386,7 +393,8 @@ async def ui():
         }
 
         ragInput.addEventListener("keypress", function (e) {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
             const message = ragInput.value.trim();
             if (message !== "") {
                 const messageElement = document.createElement("div");
@@ -402,7 +410,8 @@ async def ui():
         });
 
         aiInput.addEventListener("keypress", function (e) {
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
             const message = aiInput.value.trim();
             if (message !== "") {
                 const messageElement = document.createElement("div");
@@ -469,34 +478,57 @@ async def upload_files(files: list[UploadFile]):
 
 
 @app.post("/retrieve")
-async def retrieve(chat: Chat) -> list[Document]:
-    nodes = query_engine.retrieve(QueryBundle(query_str=chat.content))
+async def retrieve(message: Message) -> list[Document]:
+    nodes = query_engine.retrieve(QueryBundle(query_str=message.content))
     data = [Document(content=node.text) for node in nodes]
     return data
 
 
+@app.post("/chat")
+async def chat(message: Message):
+
+    def stream():
+        response = query_engine.query(message.content)
+        for text in response.response_gen:
+            yield text
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 @app.post("/embeddings")
-async def embeddings(message: Message):
-    if message.chat:
-        content = (
-            f"Conversation with {message.chat}\n{message.author}: {message.content}"
-        )
-    elif message.context:
-        content = (
-            f"Conversation about {message.context}\n{message.author}: {message.content}"
-        )
+async def embeddings(embedding: Embeddings):
+    content = f'{embedding.author} said: "{embedding.content.replace(chr(10), " ")}"'
     response = await async_client.add(
         collection_name="One", documents=[content], ids=[str(uuid.uuid4())]
     )
     return response
 
 
-@app.post("/chat")
-async def chat(chat: Chat):
+@app.post("/assistant")
+async def assistant(messages: Messages):
 
-    def stream():
-        response = query_engine.query(chat.content)
-        for text in response.response_gen:
-            yield text
+    queries = await async_client.query(
+        collection_name="One", query_text=messages.messages[-1].content
+    )
+    queries = list(filter(lambda q: q.score > 0.5, queries))[:2]
+    if len(queries) > 0:
+        messages.messages[-1].content = (
+            f"{chr(10).join([q.document for q in queries[::-1]])}{chr(10)}{chr(10)}"
+            f"Do not include statements like 'According to the provided text' or 'Based "
+            f"on the provided information' or anything similar in your answer.{chr(10)}{chr(10)}"
+            f"{messages.messages[-1].content}{chr(10)}"
+        )
+
+    async def stream():
+        response = await Settings.llm.astream_chat(
+            [
+                ChatMessage(role=mess.role, content=mess.content)
+                for mess in messages.messages
+            ],
+            max_tokens=messages.max_tokens,
+            temperature=messages.temperature,
+        )
+        async for delta in response:
+            yield delta.delta
 
     return StreamingResponse(stream(), media_type="text/event-stream")
