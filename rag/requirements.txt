@@ -4,4 +4,4 @@ llama-index-vector-stores-qdrant
 llama-index-embeddings-fastembed
 python-multipart
 pydantic-settings
-qdrant_client
+qdrant_client[fastembed]

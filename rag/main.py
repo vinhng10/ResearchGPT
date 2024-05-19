@@ -1,8 +1,10 @@
+import uuid
 import qdrant_client
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 from fastapi import FastAPI, UploadFile
 from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from llama_index.core import (
     VectorStoreIndex,
     Settings,
@@ -26,6 +28,13 @@ class Chat(BaseModel):
     content: str
 
 
+class Message(BaseModel):
+    author: str
+    chat: str | None = None
+    context: str | None = None
+    content: str
+
+
 class Environment(BaseSettings):
     llm_url: str = "https://development-llm.dbinno.com/v1"
     embed_model: str = "BAAI/bge-large-en-v1.5"
@@ -39,18 +48,34 @@ class Environment(BaseSettings):
 env = Environment()
 app = FastAPI()
 
+origins = [
+    "https://development-app.dbinno.com",
+    "https://development-api.dbinno.com",
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 Settings.llm = OpenAI(
     api_base=env.llm_url, temperature=env.temperature, max_tokens=1024
 )
 Settings.embed_model = FastEmbedEmbedding(
     model_name=env.embed_model, cache_dir="/storage"
 )
+
+# Sync Qdrant client:
 client = qdrant_client.QdrantClient(url=env.vector_store_url, port=443)
 vector_store = QdrantVectorStore(client=client, collection_name="Store")
 index = VectorStoreIndex.from_vector_store(
     vector_store=vector_store, insert_batch_size=32
 )
-# text qa prompt
+# Text Q&A prompt
 text_qa_system_prompt = ChatMessage(
     content=(
         "<<SYS>> You are an expert Q&A system that is trusted around the world.\n"
@@ -91,6 +116,10 @@ pipeline = IngestionPipeline(
     ],
     vector_store=vector_store,
 )
+
+# Async Qdrant client:
+async_client = qdrant_client.AsyncQdrantClient(url=env.vector_store_url, port=443)
+async_client.set_model(env.embed_model, cache_dir="/storage")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -444,6 +473,22 @@ async def retrieve(chat: Chat) -> list[Document]:
     nodes = query_engine.retrieve(QueryBundle(query_str=chat.content))
     data = [Document(content=node.text) for node in nodes]
     return data
+
+
+@app.post("/embeddings")
+async def embeddings(message: Message):
+    if message.chat:
+        content = (
+            f"Conversation with {message.chat}\n{message.author}: {message.content}"
+        )
+    elif message.context:
+        content = (
+            f"Conversation about {message.context}\n{message.author}: {message.content}"
+        )
+    response = await async_client.add(
+        collection_name="One", documents=[content], ids=[str(uuid.uuid4())]
+    )
+    return response
 
 
 @app.post("/chat")
