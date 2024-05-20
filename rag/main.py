@@ -1,5 +1,5 @@
 import uuid
-import qdrant_client
+from qdrant_client import QdrantClient, AsyncQdrantClient, models
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 from fastapi import FastAPI, UploadFile
@@ -33,6 +33,7 @@ class Messages(BaseModel):
     messages: list[Message]
     max_tokens: int = 1024
     temperature: float = 0.8
+    user: str
 
 
 class Embeddings(BaseModel):
@@ -40,6 +41,7 @@ class Embeddings(BaseModel):
     chat: str | None = None
     context: str | None = None
     content: str
+    boundary: list[str]
 
 
 class Environment(BaseSettings):
@@ -77,7 +79,7 @@ Settings.embed_model = FastEmbedEmbedding(
 )
 
 # Sync Qdrant client:
-client = qdrant_client.QdrantClient(url=env.vector_store_url, port=443)
+client = QdrantClient(url=env.vector_store_url, port=443)
 vector_store = QdrantVectorStore(client=client, collection_name="Store")
 index = VectorStoreIndex.from_vector_store(
     vector_store=vector_store, insert_batch_size=32
@@ -125,7 +127,7 @@ pipeline = IngestionPipeline(
 )
 
 # Async Qdrant client:
-async_client = qdrant_client.AsyncQdrantClient(url=env.vector_store_url, port=443)
+async_client = AsyncQdrantClient(url=env.vector_store_url, port=443)
 async_client.set_model(env.embed_model, cache_dir="/storage")
 
 
@@ -499,7 +501,10 @@ async def chat(message: Message):
 async def embeddings(embedding: Embeddings):
     content = f'{embedding.author} said: "{embedding.content.replace(chr(10), " ")}"'
     response = await async_client.add(
-        collection_name="One", documents=[content], ids=[str(uuid.uuid4())]
+        collection_name="One",
+        metadata=[{"boundary": embedding.boundary}],
+        documents=[content],
+        ids=[str(uuid.uuid4())],
     )
     return response
 
@@ -508,9 +513,20 @@ async def embeddings(embedding: Embeddings):
 async def assistant(messages: Messages):
 
     queries = await async_client.query(
-        collection_name="One", query_text=messages.messages[-1].content
+        collection_name="One",
+        query_text=messages.messages[-1].content,
+        limit=2,
+        score_threshold=0.5,
+        query_filter=models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="boundary",
+                    match=models.MatchAny(any=[messages.user]),
+                ),
+            ]
+        ),
     )
-    queries = list(filter(lambda q: q.score > 0.5, queries))[:2]
+
     if len(queries) > 0:
         messages.messages[-1].content = (
             f"{chr(10).join([q.document for q in queries[::-1]])}{chr(10)}{chr(10)}"
