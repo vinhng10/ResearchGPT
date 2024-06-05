@@ -933,6 +933,7 @@ async def assistant(messages: Messages):
 
     query = messages.messages[-1].content
 
+    # Compose data filters to filter as many irrelevant data as possible:
     filters = [
         models.FieldCondition(
             key="boundary",
@@ -963,6 +964,7 @@ async def assistant(messages: Messages):
             )
         )
 
+    # Query vector database for relevant documents:
     documents = await async_client.query(
         collection_name="One",
         query_text=query,
@@ -970,26 +972,46 @@ async def assistant(messages: Messages):
         score_threshold=0.3,
         query_filter=models.Filter(must=filters),
     )
-    print(documents)
+    for d in documents:
+        print("-", d.score, d.document[:100])
 
+    # Rerank the retrieved documents:
     if len(documents) > 0:
         scores = reranker.compute_score(
             [[query, document.document] for document in documents], normalize=True
         )
+        if type(scores) != list:
+            scores = [scores]
         scores = sorted(zip(scores, documents), reverse=True)
-        threshold = 0.5 if scores[0][0] >= 0.5 else 1e-2
+        print("=========================")
+        for d in scores:
+            print("-", d[0], d[1].score, d[1].document[:100])
+
+        threshold = 0.5 if scores[0][0] >= 0.5 else 1e-3
         scores = list(filter(lambda x: x[0] >= threshold, scores))[:5]
         print("=========================")
         print(scores)
+        if len(scores) > 0:
+            messages.messages[-1].content = (
+                f"""Here's the list of topics discussed by {', '.join(extraction["names"])} {extraction["datetime"]}:\n"""
+                f"""{''.join([f'- {s[1].document.split(chr(10))[-1]}{chr(10)}' for s in scores])}\n"""
+                f"""Do not include statements like 'According to the provided text' or 'Based """
+                f"""on the provided information' or anything similar in your answer.\n"""
+                f"""Answer this question: {query}"""
+            )
+        else:
+            messages.messages[-1].content = (
+                f"""No relevant discussion by {', '.join(extraction["names"])} {extraction["datetime"]} was found.\n"""
+                f"""Answer this question: {query}"""
+            )
+    else:
         messages.messages[-1].content = (
-            f"""Here's the list of topics discussed by {', '.join(extraction["names"])} {extraction["datetime"]}:\n"""
-            f"""{''.join([f'- {s[1].document.split(chr(10))[-1]}{chr(10)}' for s in scores])}\n"""
-            f"""Do not include statements like 'According to the provided text' or 'Based """
-            f"""on the provided information' or anything similar in your answer."""
+            f"""No relevant discussion by {', '.join(extraction["names"])} {extraction["datetime"]} was found.\n"""
             f"""Answer this question: {query}"""
         )
     print(format_prompt(messages.messages, family="phi3"))
 
+    # Final call to LLM:
     async def stream():
         async with aiohttp.ClientSession() as session:
             async with session.post(
