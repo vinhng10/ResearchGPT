@@ -1,7 +1,11 @@
+aiohttp
 fastapi
+FlagEmbedding
 llama-index
 llama-index-vector-stores-qdrant
 llama-index-embeddings-fastembed
 python-multipart
 pydantic-settings
 qdrant_client[fastembed]
+pendulum
+word2number
